@@ -119,6 +119,23 @@ function validateDietPlan(plan: any) {
   return validatedPlan;
 }
 
+
+http.route({
+  path: "/vapi/generate-program",
+  method: "OPTIONS",
+  handler: httpAction(async () => {
+    console.log("CORS preflight request handled ✅");
+    return new Response(null, {
+      status: 204,
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization",
+      },
+    });
+  }),
+});
+
 http.route({
   path: "/vapi/generate-program",
   method: "POST",
@@ -143,12 +160,11 @@ http.route({
       const model = genAI.getGenerativeModel({
         model: "gemini-2.0-flash-001",
         generationConfig: {
-          temperature: 0.4, // lower temperature for more predictable outputs
+          temperature: 0.4,
           topP: 0.9,
           responseMimeType: "application/json",
         },
       });
-
       const workoutPrompt = `You are an experienced fitness coach creating a personalized workout plan based on:
       Age: ${age}
       Height: ${height}
@@ -252,7 +268,7 @@ http.route({
         name: `${fitness_goal} Plan - ${new Date().toLocaleDateString()}`,
       });
 
-      return new Response(
+     return new Response(
         JSON.stringify({
           success: true,
           data: {
@@ -263,11 +279,15 @@ http.route({
         }),
         {
           status: 200,
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*", // ✅ FIX
+          },
         }
       );
     } catch (error) {
       console.error("Error generating fitness plan:", error);
+
       return new Response(
         JSON.stringify({
           success: false,
@@ -275,10 +295,14 @@ http.route({
         }),
         {
           status: 500,
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*", // ✅ FIX
+          },
         }
       );
     }
+
   }),
 });
 

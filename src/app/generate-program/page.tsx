@@ -70,13 +70,48 @@ const GenerateProgramPage = () => {
       setCallEnded(false);
     };
 
-    const handleCallEnd = () => {
-      console.log("Call ended");
-      setCallActive(false);
-      setConnecting(false);
-      setIsSpeaking(false);
-      setCallEnded(true);
+ const handleCallEnd = async () => {
+  console.log("Call ended");
+  setCallActive(false);
+  setConnecting(false);
+  setIsSpeaking(false);
+  setCallEnded(true);
+
+  try {
+    // Here’s where we send the gathered details to your Convex API
+    const userDetails = {
+      user_id: user?.id,
+      age: "25", // replace with dynamic values collected by your Vapi agent if available
+      height: "175",
+      weight: "70",
+      fitness_level: "beginner",
+      workout_days: "3",
+      injuries: "none",
+      dietary_restrictions: "none",
+      fitness_goal: "muscle gain",
     };
+
+    console.log("Sending details to Convex API:", userDetails);
+
+    const response = await fetch(
+      "https://trustworthy-swordfish-395.convex.site/vapi/generate-program",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(userDetails),
+      }
+    );
+
+    if (!response.ok) {
+      console.error("Failed to trigger program generation:", await response.text());
+    } else {
+      console.log("✅ Fitness plan generation triggered successfully!");
+    }
+  } catch (err) {
+    console.error("Error calling Convex API:", err);
+  }
+};
+
 
     const handleSpeechStart = () => {
       console.log("AI started Speaking");
@@ -85,7 +120,7 @@ const GenerateProgramPage = () => {
 
     const handleSpeechEnd = () => {
       console.log("AI stopped Speaking");
-      setIsSpeaking(false);
+      setIsSpeaking(false); 
     };
     const handleMessage = (message: any) => {
       if (message.type === "transcript" && message.transcriptType === "final") {
