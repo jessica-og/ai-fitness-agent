@@ -5,9 +5,10 @@ import { api } from "./_generated/api";
 import { httpAction } from "./_generated/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const http = httpRouter();
-
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+
+
+const http = httpRouter();
 
 http.route({
   path: "/clerk-webhook",
@@ -142,7 +143,7 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     try {
       const payload = await request.json();
-
+console.log("🔥 Incoming data:", payload);
       const {
         user_id,
         age,
@@ -154,7 +155,10 @@ http.route({
         fitness_level,
         dietary_restrictions,
       } = payload;
-
+  if (!user_id) {
+        console.error("Missing user_id in request");
+        return new Response("Missing user_id", { status: 400 });
+      }
       console.log("Payload is here:", payload);
 
       const model = genAI.getGenerativeModel({

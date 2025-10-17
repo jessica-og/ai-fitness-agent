@@ -60,3 +60,9 @@ export const getUserPlans = query({
     return plans;
   },
 });
+
+export const getByUserId = query(async ({ db }, { userId }: { userId: string }) => {
+  // Check if a plan exists for this user
+  const plan = await db.query("plans").withIndex("by_user_id", q => q.eq("userId", userId)).first();
+  return plan;
+});
