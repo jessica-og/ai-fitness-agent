@@ -5,10 +5,9 @@ import { api } from "./_generated/api";
 import { httpAction } from "./_generated/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
-
-
 const http = httpRouter();
+
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
 http.route({
   path: "/clerk-webhook",
@@ -271,7 +270,7 @@ console.log("🔥 Incoming data:", payload);
         workoutPlan,
         name: `${fitness_goal} Plan - ${new Date().toLocaleDateString()}`,
       });
-
+  console.log("✅ Plan created:", planId);
      return new Response(
         JSON.stringify({
           success: true,

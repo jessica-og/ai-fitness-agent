@@ -7,19 +7,20 @@ import { useUser } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
-
-
 const GenerateProgramPage = () => {
   const [callActive, setCallActive] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [messages, setMessages] = useState<any[]>([]);
   const [callEnded, setCallEnded] = useState(false);
+const [collectedVars, setCollectedVars] = useState<Record<string, any>>({});
+  const [sessionId, setSessionId] = useState<string | null>(null);
 
   const { user } = useUser();
   const router = useRouter();
   const messageContainerRef = useRef<HTMLDivElement>(null);
 
+  // Ignore "Meeting has ended" console spam
   useEffect(() => {
     const originalError = console.error;
     console.error = function (msg, ...args) {
@@ -38,148 +39,203 @@ const GenerateProgramPage = () => {
     };
   }, []);
 
+  // Auto-scroll messages
   useEffect(() => {
     if (messageContainerRef.current) {
-      messageContainerRef.current.scrollTop = messageContainerRef.current.scrollHeight;
+      messageContainerRef.current.scrollTop =
+        messageContainerRef.current.scrollHeight;
     }
   }, [messages]);
 
+  // Redirect after call ends
   useEffect(() => {
     if (callEnded) {
       const redirectTimer = setTimeout(() => {
         router.push("/profile");
-      }, 1500);
+      }, 2000);
       return () => clearTimeout(redirectTimer);
     }
   }, [callEnded, router]);
 
+  // === 📞 VAPI EVENT HANDLERS ===
+useEffect(() => {
+  const handleCallStart = () => {
+    console.log("📞 Call started");
+    setConnecting(false);
+    setCallActive(true);
+    setCallEnded(false);
+  };
+
+  const handleEndOfCallReport = async (report: any) => {
+    console.log("📋 End of call report:", report);
+
+    // Vapi returns structuredData from analysisPlan
+    const structuredData = report?.structuredData || {};
+    console.log("🧩 Extracted structured data:", structuredData);
+
+    setCollectedVars(structuredData);
+    console.log(collectedVars)
+    // Always include user_id
+    const userId = user?.id || structuredData.user_id || null;
+    if (!userId) {
+      console.error("❌ Missing user_id — cannot save program.");
+      return;
+    }
+    try {
+      const mergedVars = structuredData || {};
+      console.log("✅ Final collected vars:", mergedVars);
+
+      const clean = (val: any) => (val !== undefined ? val : null);
+
+      const payload = {
+        user_id: user?.id || mergedVars.user_id || null,
+        age: clean(mergedVars.age),
+        height: clean(mergedVars.height),
+        weight: clean(mergedVars.weight),
+        injuries: clean(mergedVars.injuries),
+        workout_days: clean(mergedVars.workout_days),
+        fitness_goal: clean(mergedVars.fitness_goal),
+        fitness_level: clean(mergedVars.fitness_level),
+        dietary_restrictions: clean(mergedVars.dietary_restrictions),
+      };
+
+      console.log("📦 Sending final payload:", payload);
+
+      const convexRes = await fetch(
+        "https://trustworthy-swordfish-395.convex.site/vapi/generate-program",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        }
+      );
+
+      if (!convexRes.ok) {
+        const text = await convexRes.text();
+        console.error("❌ Convex returned an error:", text);
+      } else {
+        console.log("✅ Fitness plan generated successfully!");
+      }
+    } catch (err) {
+      console.error("❌ Error during handleEndOfCallReport:", err);
+    }
+
+    setCallActive(false);
+    setConnecting(false);
+    setCallEnded(true);
+  };
+
+  const handleSpeechStart = () => {
+    setIsSpeaking(true);
+    console.log("🗣️ AI started speaking");
+  };
+
+  const handleSpeechEnd = () => {
+    setIsSpeaking(false);
+    console.log("🔇 AI stopped speaking");
+  };
+
+  const handleMessage = (message: any) => {
+    if (message.type === "transcript" && message.transcriptType === "final") {
+      setMessages((prev) => [
+        ...prev,
+        { content: message.transcript, role: message.role },
+      ]);
+    }
+  };
+
+  const handleError = (error: any) => {
+    console.error("Vapi Error", error);
+    setConnecting(false);
+    setCallActive(false);
+  };
+
+  // Register listeners
+  (vapi as any)
+    .on("call-start", handleCallStart)
+    .on("end-of-call-report", handleEndOfCallReport)
+    .on("speech-start", handleSpeechStart)
+    .on("speech-end", handleSpeechEnd)
+    .on("message", handleMessage)
+    .on("error", handleError);
+
+  return () => {
+    vapi
+      .off("call-start", handleCallStart)
+      .off("end-of-call-report", handleEndOfCallReport)
+      .off("speech-start", handleSpeechStart)
+      .off("speech-end", handleSpeechEnd)
+      .off("message", handleMessage)
+      .off("error", handleError);
+  };
+}, [sessionId, user]);
 
 
-  useEffect(() => {
-    const handleCallStart = () => {
-      console.log("Call started");
+// === 🚀 TOGGLE CALL ===
+const toggleCall = async () => {
+  if (!user?.id) {
+    console.error("User not loaded yet — cannot start call");
+    return;
+  }
+
+  // 🟥 END CALL LOGIC
+  if (callActive) {
+    console.log("⏹️ Ending call...");
+    try {
+      // Gracefully hang up the call
+      await vapi.stop(); // triggers end-of-call-report if call is active
+      setCallActive(false);
       setConnecting(false);
-      setCallActive(true);
-      setCallEnded(false);
-    };
+      setIsSpeaking(false);
+      setCallEnded(true);
+      console.log("✅ Call stopped successfully");
+    } catch (err) {
+      console.error("❌ Error ending call:", err);
+      setCallActive(false);
+      setConnecting(false);
+      setCallEnded(true);
+    }
+    return; // stop here
+  }
 
- 
-const handleCallEnd = async () => {
-  console.log("Call ended");
-  setCallActive(false);
-  setConnecting(false);
-  setIsSpeaking(false);
-  setCallEnded(true);
-
+  // 🟩 START CALL LOGIC
   try {
-    // Wait briefly for Vapi to POST data to Convex
-    await new Promise((r) => setTimeout(r, 4000));
+    setConnecting(true);
+    setMessages([]);
+    setCallEnded(false);
+    setCollectedVars({});
 
-    const res = await fetch(`/api/check-plan?user_id=${user?.id}`);
-    const data = await res.json();
+    const fullName = user.firstName
+      ? `${user.firstName} ${user.lastName || ""}`.trim()
+      : "There";
 
-    if (data?.exists) {
-      console.log("✅ Plan already generated by Vapi.");
+    console.log("🎬 Starting new Vapi session for:", fullName);
+
+    const session = await vapi.start(
+      process.env.NEXT_PUBLIC_VAPI_ASSISTANT_ID!,
+      {
+        variableValues: {
+          full_name: fullName,
+          user_id: user.id,
+        },
+      }
+    );
+
+    if (!session) {
+      console.error("❌ Vapi session did not start properly.");
+      setConnecting(false);
       return;
     }
 
-    console.log("⚠️ No plan found — running fallback generation.");
-
-    const fallbackPayload = {
-      user_id: user?.id,
-      age: "25",
-      height: "175",
-      weight: "70",
-      fitness_level: "beginner",
-      workout_days: "3",
-      injuries: "none",
-      dietary_restrictions: "none",
-      fitness_goal: "muscle gain",
-    };
-
-    await fetch("https://trustworthy-swordfish-395.convex.site/vapi/generate-program", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(fallbackPayload),
-    });
-
-    console.log("✅ Fallback triggered manually.");
-  } catch (err) {
-    console.error("Fallback failed:", err);
+    console.log("📞 Started session:", session);
+    setSessionId(session.id);
+  } catch (error) {
+    console.error("❌ Failed to start call:", error);
+    setConnecting(false);
   }
 };
 
 
-    const handleSpeechStart = () => {
-      console.log("AI started Speaking");
-      setIsSpeaking(true);
-    };
-
-    const handleSpeechEnd = () => {
-      console.log("AI stopped Speaking");
-      setIsSpeaking(false);
-    };
-
-    const handleMessage = (message: any) => {
-      if (message.type === "transcript" && message.transcriptType === "final") {
-        const newMessage = { content: message.transcript, role: message.role };
-        setMessages((prev) => [...prev, newMessage]);
-      }
-    };
-
-    const handleError = (error: any) => {
-      console.log("Vapi Error", error);
-      setConnecting(false);
-      setCallActive(false);
-    };
-
-    vapi
-      .on("call-start", handleCallStart)
-      .on("call-end", handleCallEnd)
-      .on("speech-start", handleSpeechStart)
-      .on("speech-end", handleSpeechEnd)
-      .on("message", handleMessage)
-      .on("error", handleError);
-
-    return () => {
-      vapi
-        .off("call-start", handleCallStart)
-        .off("call-end", handleCallEnd)
-        .off("speech-start", handleSpeechStart)
-        .off("speech-end", handleSpeechEnd)
-        .off("message", handleMessage)
-        .off("error", handleError);
-    };
-  }, [user?.id]);
-
-  const toggleCall = async () => {
-    if (callActive) vapi.stop();
-    else {
-      try {
-        setConnecting(true);
-        setMessages([]);
-        setCallEnded(false);
-
-        const fullName = user?.firstName
-          ? `${user.firstName} ${user.lastName || ""}`.trim()
-          : "There";
-
-        await vapi.start(
-          process.env.NEXT_PUBLIC_VAPI_ASSISTANT_ID!,
-          {
-            variableValues: {
-              full_name: fullName,
-              user_id: user?.id,
-            },
-          },
-          process.env.NEXT_PUBLIC_VAPI_WORKFLOW_ID!
-        );
-      } catch (error) {
-        console.log("Failed to start call", error);
-        setConnecting(false);
-      }
-    }
-  };
 
   return (
     <div className="flex flex-col min-h-screen text-foreground overflow-hidden  pb-6 pt-24">
@@ -327,31 +383,31 @@ const handleCallEnd = async () => {
 
         {/* CALL CONTROLS */}
         <div className="w-full flex justify-center gap-4">
-          <Button
-            className={`w-40 text-xl rounded-3xl ${
-              callActive
-                ? "bg-destructive hover:bg-destructive/90"
-                : callEnded
-                  ? "bg-green-600 hover:bg-green-700"
-                  : "bg-primary hover:bg-primary/90"
-            } text-white relative`}
-            onClick={toggleCall}
-            disabled={connecting || callEnded}
-          >
-            {connecting && (
-              <span className="absolute inset-0 rounded-full animate-ping bg-primary/50 opacity-75"></span>
-            )}
+       <Button
+  className={`w-40 text-xl rounded-3xl ${
+    callActive
+      ? "bg-destructive hover:bg-destructive/90"
+      : callEnded
+        ? "bg-green-600 hover:bg-green-700"
+        : "bg-primary hover:bg-primary/90"
+  } text-white relative`}
+  onClick={toggleCall}
+  disabled={connecting}
+>
+  {connecting && (
+    <span className="absolute inset-0 rounded-full animate-ping bg-primary/50 opacity-75"></span>
+  )}
+  <span>
+    {connecting
+      ? "Connecting..."
+      : callActive
+        ? "End Call"
+        : callEnded
+          ? "View Profile"
+          : "Start Call"}
+  </span>
+</Button>
 
-            <span>
-              {callActive
-                ? "End Call"
-                : connecting
-                  ? "Connecting..."
-                  : callEnded
-                    ? "View Profile"
-                    : "Start Call"}
-            </span>
-          </Button>
         </div>
       </div>
     </div>
